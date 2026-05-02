@@ -1,111 +1,247 @@
-import { useState } from 'react';
-import { 
-  Plus, 
-  FileText, 
-  ChevronRight, 
-  MoreHorizontal, 
-  Search,
-  Layout,
-  Type,
-  Image as ImageIcon,
-  Link2,
-  Sparkles
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, ChevronRight, Trash2, StickyNote } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { cn } from '../lib/utils';
+import { db } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
+
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  where,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp
+} from 'firebase/firestore';
 
 const NotesWorkspace = () => {
-  const [selectedNote, setSelectedNote] = useState('Introduction to Nave OS');
-  
-  const notes = [
-    { id: 1, title: 'Introduction to Nave OS', emoji: '🚀' },
-    { id: 2, title: 'Product Roadmap Q3', emoji: '📅' },
-    { id: 3, title: 'Architecture Decisions', emoji: '🏗️' },
-    { id: 4, title: 'Market Research', emoji: '📊' },
-  ];
+  const { user } = useAuth();
+
+  const [notes, setNotes] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [loadedUserId, setLoadedUserId] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const q = query(
+      collection(db, 'notes'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs
+          .map((item) => ({
+            id: item.id,
+            ...item.data()
+          }))
+          .sort((a, b) => {
+            const bTime = b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+            const aTime = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+            return bTime - aTime;
+          });
+
+        setNotes(data);
+        setError('');
+        setLoadedUserId(user.uid);
+        setSelectedId((currentId) => {
+          if (currentId && data.some((note) => note.id === currentId)) {
+            return currentId;
+          }
+
+          return data[0]?.id ?? null;
+        });
+      },
+      (firestoreError) => {
+        console.error('Firestore Error:', firestoreError);
+        setError('Could not load notes. Check your Firestore rules and connection.');
+        setLoadedUserId(user.uid);
+      }
+    );
+
+    return unsubscribe;
+  }, [user]);
+
+  const addNote = async () => {
+    if (!user) return;
+
+    try {
+      const newDoc = await addDoc(collection(db, 'notes'), {
+        userId: user.uid,
+        title: 'Untitled Note',
+        content: '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setSelectedId(newDoc.id);
+    } catch (error) {
+      console.error(error);
+      setError('Could not create the note.');
+    }
+  };
+
+  const updateNote = async (field, value) => {
+    if (!selectedId) return;
+
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === selectedId
+          ? { ...note, [field]: value }
+          : note
+      )
+    );
+
+    try {
+      const noteRef = doc(db, 'notes', selectedId);
+
+      await updateDoc(noteRef, {
+        [field]: value,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error(error);
+      setError('Could not save the note.');
+    }
+  };
+
+  const deleteNoteHandler = async () => {
+    if (!selectedId) return;
+
+    const noteId = selectedId;
+    const nextNotes = notes.filter((note) => note.id !== noteId);
+    setNotes(nextNotes);
+    setSelectedId(nextNotes[0]?.id ?? null);
+
+    try {
+      await deleteDoc(doc(db, 'notes', noteId));
+    } catch (error) {
+      console.error(error);
+      setError('Could not delete the note.');
+    }
+  };
+
+  const selectedNote = notes.find((note) => note.id === selectedId);
+  const isLoading = Boolean(user && loadedUserId !== user.uid);
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-full text-neutral-500">
+        Sign in to use notes.
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full text-white">
+        Loading Notes...
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full">
-      {/* Notes Sidebar */}
+      {/* Sidebar */}
       <div className="w-64 border-r border-white/5 bg-neutral-950/20 flex flex-col">
         <div className="p-4 flex items-center justify-between">
-          <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Workspace</span>
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 rounded-md">
+          <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+            Workspace
+          </span>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={addNote}
+          >
             <Plus className="w-4 h-4" />
           </Button>
         </div>
-        
-        <nav className="flex-1 overflow-y-auto px-2 space-y-0.5">
+
+        <div className="flex-1 overflow-y-auto px-2 space-y-1">
           {notes.map((note) => (
             <div
               key={note.id}
-              onClick={() => setSelectedNote(note.title)}
+              onClick={() => setSelectedId(note.id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer transition-all group",
-                selectedNote === note.title ? "bg-white/10 text-white" : "text-neutral-400 hover:text-white hover:bg-white/5"
+                'px-3 py-2 rounded-lg text-sm cursor-pointer truncate transition-all',
+                selectedId === note.id
+                  ? 'bg-white/10 text-white'
+                  : 'text-neutral-400 hover:bg-white/5 hover:text-white'
               )}
             >
-              <span className="text-base">{note.emoji}</span>
-              <span className="truncate">{note.title}</span>
+              <span className="flex items-center gap-2 truncate">
+                <StickyNote className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{note.title || 'Untitled Note'}</span>
+              </span>
             </div>
           ))}
-        </nav>
+        </div>
       </div>
 
-      {/* Editor Area */}
+      {/* Main Area */}
       <div className="flex-1 flex flex-col bg-background">
         <div className="h-14 border-b border-white/5 flex items-center justify-between px-8">
           <div className="flex items-center gap-2 text-sm text-neutral-500">
             <span>Notes</span>
             <ChevronRight className="w-4 h-4" />
-            <span className="text-white">{selectedNote}</span>
+            <span className="text-white">
+              {selectedNote ? selectedNote.title || 'Untitled Note' : 'No Note'}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm">Share</Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="w-4 h-4" />
+
+          {selectedNote && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={deleteNoteHandler}
+            >
+              <Trash2 className="w-4 h-4" />
             </Button>
-          </div>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto py-20 px-12">
-            <input 
-              value={selectedNote}
-              onChange={(e) => setSelectedNote(e.target.value)}
-              className="text-5xl font-bold bg-transparent border-none focus:ring-0 w-full mb-8 placeholder:text-neutral-800"
+        {error && (
+          <div className="border-b border-red-500/20 bg-red-500/10 px-8 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+
+        {selectedNote ? (
+          <div className="max-w-3xl mx-auto py-20 px-12 w-full">
+            <input
+              value={selectedNote.title || ''}
+              onChange={(e) =>
+                updateNote('title', e.target.value)
+              }
+              className="text-5xl font-bold bg-transparent border-none outline-none w-full mb-8 text-white"
               placeholder="Untitled"
             />
-            
-            <div className="space-y-6">
-              <div className="group relative">
-                <div className="absolute -left-8 top-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Plus className="w-3 h-3" /></Button>
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><Layout className="w-3 h-3" /></Button>
-                </div>
-                <p className="text-lg text-neutral-300 leading-relaxed outline-none" contentEditable>
-                  Nave OS is more than just a chat interface. It's a comprehensive environment where your thoughts are captured, organized, and enhanced by AI. 
-                </p>
-              </div>
 
-              <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
-                <h3 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" /> AI Summary
-                </h3>
-                <p className="text-neutral-300 text-sm italic">
-                  "This document outlines the core philosophy of Nave OS, focusing on the integration of human intuition and artificial intelligence."
-                </p>
-              </div>
-
-              <div className="space-y-4 pt-4">
-                <div className="flex items-center gap-4 text-neutral-500">
-                  <Type className="w-4 h-4" />
-                  <span className="text-sm">Click here to start writing or type '/' for commands...</span>
-                </div>
-              </div>
-            </div>
+            <textarea
+              value={selectedNote.content || ''}
+              onChange={(e) =>
+                updateNote('content', e.target.value)
+              }
+              className="w-full min-h-[400px] bg-transparent outline-none resize-none text-lg text-neutral-300"
+              placeholder="Start writing..."
+            />
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-neutral-500">
+            No notes yet. Click + to create one.
+          </div>
+        )}
       </div>
     </div>
   );

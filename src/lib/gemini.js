@@ -7,18 +7,37 @@ When asked who you are, always identify as Nave OS.
 Maintain a professional yet approachable persona.
 `;
 
-export async function getGeminiResponse(messages) {
+const buildMemoryContext = (memories = []) => {
+  if (memories.length === 0) return '';
+
+  const memoryLines = memories
+    .slice(0, 5)
+    .map((memory, index) => `${index + 1}. ${memory.title}: ${memory.content}`)
+    .join('\n');
+
+  return `
+Relevant permanent user memories:
+${memoryLines}
+
+Use these memories only when they are directly relevant to the user's request. Do not mention that you are using memory unless the user asks.
+`;
+};
+
+export async function getGeminiResponse(messages, memories = []) {
   try {
+    const memoryContext = buildMemoryContext(memories);
+    const promptContext = `${SYSTEM_PROMPT}${memoryContext ? `\n${memoryContext}` : ''}`;
+
     // Merge the system prompt into the very first user message for 100% compatibility
     const contents = messages.map((msg, index) => {
       let text = msg.content;
       
       // If it's the first user message, prefix it with the system prompt
       if (index === 1 && msg.role === 'user') {
-        text = `${SYSTEM_PROMPT}\n\nUser Message: ${msg.content}`;
+        text = `${promptContext}\n\nUser Message: ${msg.content}`;
       } else if (index === 0 && msg.role === 'user') {
         // Just in case the first message is a user message
-        text = `${SYSTEM_PROMPT}\n\nUser Message: ${msg.content}`;
+        text = `${promptContext}\n\nUser Message: ${msg.content}`;
       }
 
       return {
