@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Sparkles, Bot, Shield, Zap, Heart, Globe, Twitter } from 'lucide-react';
+import { Sparkles, Bot, Shield, Zap, Heart, Globe, Share2 } from "lucide-react";
 import { Button } from '../components/ui/Button';
 import { Link } from 'react-router-dom';
 
@@ -80,7 +80,7 @@ const AboutPage = () => {
 
           <div className="flex items-center justify-center gap-8 text-neutral-500">
             <a href="#" className="hover:text-white transition-colors"><Github className="w-6 h-6" /></a>
-            <a href="#" className="hover:text-white transition-colors"><Twitter className="w-6 h-6" /></a>
+            <a href="#" className="hover:text-white transition-colors"><Share2 className="w-6 h-6" /></a>
           </div>
         </div>
       </main>
