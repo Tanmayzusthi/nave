@@ -295,7 +295,7 @@ const ChatWorkspace = () => {
   };
 
   return (
-    <div className="flex h-full min-w-0 overflow-hidden">
+    <div className="flex h-full w-full min-w-0 overflow-hidden relative">
       {isHistoryOpen && (
         <button
           type="button"
@@ -377,7 +377,7 @@ const ChatWorkspace = () => {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-3 sm:px-5 lg:px-6">
       <div className="mx-auto flex h-full w-full max-w-4xl min-w-0 flex-col">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 py-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/5 py-4">
         <div className="flex min-w-0 items-center gap-2">
           <Button
             type="button"
@@ -458,7 +458,7 @@ const ChatWorkspace = () => {
       </div>
 
       {/* Input Area */}
-      <div className="pb-4 pt-4 sm:pb-8">
+      <div className="shrink-0 pb-4 pt-4 sm:pb-8">
         <div className="glass relative rounded-2xl border-white/10 p-2 shadow-2xl">
           <textarea
             value={input}

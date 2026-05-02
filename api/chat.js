@@ -1,7 +1,7 @@
 /* global Buffer, process */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'meta-llama/llama-3.2-3b-instruct:free';
+const OPENROUTER_MODEL = 'openrouter/auto';
 
 const SYSTEM_PROMPT = `
 You are Nave OS, a premium, ultra-modern AI Operating System.
@@ -140,6 +140,7 @@ const callOpenRouter = async ({ apiKey, messages }) => {
   const data = await readJsonResponse(response);
 
   if (!response.ok || data.error) {
+    console.error('OpenRouter Error Response:', JSON.stringify(data, null, 2));
     throw new Error(data.error?.message || `OpenRouter request failed with status ${response.status}.`);
   }
 

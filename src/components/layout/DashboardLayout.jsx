@@ -41,7 +41,7 @@ const DashboardLayout = () => {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground">
       {isSidebarOpen && (
         <button
           type="button"
@@ -131,7 +131,7 @@ const DashboardLayout = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="z-20 flex h-16 items-center justify-between gap-3 border-b border-white/5 bg-background/50 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+        <header className="z-20 flex shrink-0 h-16 items-center justify-between gap-3 border-b border-white/5 bg-background/50 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <Button
               type="button"

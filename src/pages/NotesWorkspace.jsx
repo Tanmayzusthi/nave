@@ -222,8 +222,8 @@ const NotesWorkspace = () => {
       </div>
 
       {/* Main Area */}
-      <div className="flex min-w-0 flex-1 flex-col bg-background">
-        <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/5 px-4 sm:px-6 lg:px-8">
+      <div className="flex min-w-0 flex-1 flex-col bg-background h-full">
+        <div className="flex shrink-0 min-h-16 items-center justify-between gap-3 border-b border-white/5 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-2 text-sm text-neutral-500">
             <Button
               type="button"
@@ -276,7 +276,7 @@ const NotesWorkspace = () => {
               onChange={(e) =>
                 updateNote('content', e.target.value)
               }
-              className="min-h-[calc(100vh-17rem)] w-full resize-none bg-transparent text-base text-neutral-300 outline-none sm:min-h-[400px] sm:text-lg"
+              className="min-h-[calc(100dvh-17rem)] w-full resize-none bg-transparent text-base text-neutral-300 outline-none sm:min-h-[400px] sm:text-lg"
               placeholder="Start writing..."
             />
           </div>

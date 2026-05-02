@@ -26,3 +26,9 @@ functions/.secret.local
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
+.env*.local
+.env
+.env.*
+!.env.example
