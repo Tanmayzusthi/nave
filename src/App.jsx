@@ -6,6 +6,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import ChatWorkspace from './pages/ChatWorkspace';
 import NotesWorkspace from './pages/NotesWorkspace';
 import MemoryPage from './pages/MemoryPage';
+import TasksPage from './pages/TasksPage';
 import SettingsPage from './pages/SettingsPage';
 import { AuthProvider } from './context/AuthContext';
 
@@ -23,8 +24,8 @@ function App() {
           <Route path="chat" element={<ChatWorkspace />} />
           <Route path="notes" element={<NotesWorkspace />} />
           <Route path="memory" element={<MemoryPage />} />
+          <Route path="tasks" element={<TasksPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="tasks" element={<div className="p-8 text-neutral-400">Tasks Workspace (Coming Soon)</div>} />
         </Route>
         </Routes>
       </Router>

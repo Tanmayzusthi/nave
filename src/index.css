@@ -28,6 +28,18 @@
     @apply bg-background text-foreground antialiased selection:bg-white selection:text-black;
     font-family: 'Inter', sans-serif;
   }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
 }
 
 @layer components {

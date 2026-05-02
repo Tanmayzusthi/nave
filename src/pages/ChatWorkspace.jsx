@@ -8,7 +8,9 @@ import {
   User, 
   Bot, 
   Trash2,
-  Sparkles
+  Sparkles,
+  PanelLeftOpen,
+  X
 } from 'lucide-react';
 import {
   addDoc,
@@ -23,7 +25,6 @@ import {
 } from 'firebase/firestore';
 import { Button } from '../components/ui/Button';
 import { cn } from '../lib/utils';
-import { getNvidiaResponse } from '../lib/nvidia';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -69,6 +70,37 @@ const getChatTitle = (messages) => {
     : firstUserMessage.content;
 };
 
+const getChatResponse = async (messages, memories = []) => {
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ messages, memories })
+  });
+
+  const rawBody = await response.text();
+  let data;
+
+  try {
+    data = rawBody
+      ? JSON.parse(rawBody)
+      : { error: 'Nave OS returned an empty response. Please try again.' };
+  } catch {
+    throw new Error('Nave OS returned an invalid response. Please try again.');
+  }
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error || 'Nave OS could not reach the AI service. Please try again.');
+  }
+
+  if (!data.reply) {
+    throw new Error('Nave OS returned an empty response. Please try again.');
+  }
+
+  return data.reply;
+};
+
 const ChatWorkspace = () => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([STARTER_MESSAGE]);
@@ -77,6 +109,7 @@ const ChatWorkspace = () => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [permanentMemories, setPermanentMemories] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const scrollRef = useRef(null);
   const selectedChatIdRef = useRef(null);
 
@@ -171,6 +204,10 @@ const ChatWorkspace = () => {
     }
   }, [messages]);
 
+  useEffect(() => {
+    setIsHistoryOpen(false);
+  }, [selectedChatId]);
+
   const createNewChat = () => {
     setInput('');
     setMessages([STARTER_MESSAGE]);
@@ -219,7 +256,7 @@ const ChatWorkspace = () => {
 
     try {
       const relevantMemories = getRelevantMemories(permanentMemories, userMessage.content);
-      const response = await getNvidiaResponse(updatedMessages, relevantMemories);
+      const response = await getChatResponse(updatedMessages, relevantMemories);
       const assistantMessage = { 
         role: 'assistant', 
         content: response 
@@ -258,13 +295,43 @@ const ChatWorkspace = () => {
   };
 
   return (
-    <div className="flex h-full">
-      <aside className="hidden w-64 shrink-0 border-r border-white/5 bg-neutral-950/20 p-3 md:flex md:flex-col">
+    <div className="flex h-full min-w-0 overflow-hidden">
+      {isHistoryOpen && (
+        <button
+          type="button"
+          aria-label="Close chat history"
+          className="fixed inset-0 z-20 bg-black/60 md:hidden"
+          onClick={() => setIsHistoryOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-30 flex w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col border-r border-white/5 bg-neutral-950/95 p-3 backdrop-blur-xl transition-transform md:static md:z-auto md:w-64 md:translate-x-0 md:bg-neutral-950/20 md:backdrop-blur-0',
+          isHistoryOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3 md:hidden">
+          <span className="text-sm font-semibold text-white">Chat History</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-11 w-11 p-0"
+            onClick={() => setIsHistoryOpen(false)}
+            aria-label="Close chat history"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
         <Button
           variant="outline"
           size="sm"
-          className="mb-3 h-9 justify-start gap-2"
-          onClick={createNewChat}
+          className="mb-3 h-11 justify-start gap-2"
+          onClick={() => {
+            createNewChat();
+            setIsHistoryOpen(false);
+          }}
         >
           <Plus className="w-4 h-4" /> New Chat
         </Button>
@@ -286,13 +353,16 @@ const ChatWorkspace = () => {
                 )}
               >
                 <button
-                  className="min-w-0 flex-1 truncate text-left"
-                  onClick={() => selectChat(chat)}
+                  className="min-h-11 min-w-0 flex-1 truncate text-left"
+                  onClick={() => {
+                    selectChat(chat);
+                    setIsHistoryOpen(false);
+                  }}
                 >
                   {chat.title || 'New Chat'}
                 </button>
                 <button
-                  className="shrink-0 rounded-lg p-1 text-neutral-600 opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100"
+                  className="shrink-0 rounded-lg p-2 text-neutral-600 opacity-100 transition-all hover:bg-white/10 hover:text-white md:opacity-0 md:group-hover:opacity-100"
                   onClick={() => deleteChat(chat.id)}
                   aria-label="Delete chat"
                 >
@@ -304,19 +374,29 @@ const ChatWorkspace = () => {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col px-4 sm:px-6">
-      <div className="flex flex-col h-full max-w-4xl w-full mx-auto">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-3 sm:px-5 lg:px-6">
+      <div className="mx-auto flex h-full w-full max-w-4xl min-w-0 flex-col">
       {/* Header */}
-      <div className="py-4 border-b border-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="gap-2 text-neutral-400">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 py-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-11 w-11 shrink-0 p-0 md:hidden"
+            onClick={() => setIsHistoryOpen(true)}
+            aria-label="Open chat history"
+          >
+            <PanelLeftOpen className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="sm" className="min-w-0 gap-2 text-neutral-400">
             Nave Intelligence (2.5 Lite) <ChevronDown className="w-4 h-4" />
           </Button>
         </div>
         <Button 
           variant="outline" 
           size="sm" 
-          className="gap-2"
+          className="h-11 gap-2"
           onClick={createNewChat}
         >
           <Plus className="w-4 h-4" /> New Chat
@@ -326,7 +406,7 @@ const ChatWorkspace = () => {
       {/* Messages */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto py-8 space-y-8 scroll-smooth"
+        className="flex-1 overflow-y-auto py-6 space-y-6 scroll-smooth sm:py-8 sm:space-y-8"
       >
         <AnimatePresence>
           {messages.map((msg, index) => (
@@ -335,8 +415,8 @@ const ChatWorkspace = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className={cn(
-                "flex gap-4",
-                msg.role === 'user' ? "justify-end" : "justify-start"
+                'flex gap-3 sm:gap-4',
+                msg.role === 'user' ? 'justify-end' : 'justify-start'
               )}
             >
               {msg.role === 'assistant' && (
@@ -346,10 +426,10 @@ const ChatWorkspace = () => {
               )}
               
               <div className={cn(
-                "max-w-[80%] rounded-2xl p-4 text-sm leading-relaxed",
+                'max-w-[min(85%,42rem)] break-words rounded-2xl p-3 text-sm leading-relaxed sm:p-4',
                 msg.role === 'user' 
-                  ? "bg-white text-black" 
-                  : "bg-neutral-900/50 border border-white/5 text-neutral-200"
+                  ? 'bg-white text-black' 
+                  : 'border border-white/5 bg-neutral-900/50 text-neutral-200'
               )}>
                 {msg.content}
               </div>
@@ -378,27 +458,27 @@ const ChatWorkspace = () => {
       </div>
 
       {/* Input Area */}
-      <div className="pb-8 pt-4">
-        <div className="relative glass rounded-2xl border-white/10 p-2 shadow-2xl">
+      <div className="pb-4 pt-4 sm:pb-8">
+        <div className="glass relative rounded-2xl border-white/10 p-2 shadow-2xl">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
             placeholder="Ask Nave OS anything..."
-            className="w-full bg-transparent border-none focus:ring-0 text-sm p-3 min-h-[100px] resize-none placeholder:text-neutral-500"
+            className="min-h-[88px] w-full resize-none border-none bg-transparent p-3 text-sm placeholder:text-neutral-500 focus:ring-0 sm:min-h-[100px]"
           />
-          <div className="flex items-center justify-between p-2">
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-lg">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-2">
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0">
                 <Paperclip className="w-4 h-4 text-neutral-500" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-lg">
+              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0">
                 <Sparkles className="w-4 h-4 text-neutral-500" />
               </Button>
             </div>
             <Button 
               size="sm" 
-              className={cn("h-8 gap-2 transition-all", input.trim() ? "bg-white text-black" : "bg-white/10 text-white/40")}
+              className={cn('h-11 gap-2 px-4 transition-all', input.trim() ? 'bg-white text-black' : 'bg-white/10 text-white/40')}
               onClick={handleSend}
             >
               <Send className="w-4 h-4" /> Send

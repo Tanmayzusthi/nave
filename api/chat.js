@@ -1,6 +1,7 @@
 /* global Buffer, process */
 
-const NVIDIA_MODEL = 'abacusai/dracarys-llama-3.1-70b-instruct';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL = 'meta-llama/llama-3.2-3b-instruct:free';
 
 const SYSTEM_PROMPT = `
 You are Nave OS, a premium, ultra-modern AI Operating System.
@@ -77,7 +78,13 @@ const readBody = async (req) => {
 
 const sendJson = (res, status, payload) => {
   res.setHeader('Content-Type', 'application/json');
-  res.status(status).end(JSON.stringify(payload));
+  if (typeof res.status === 'function') {
+    res.status(status).end(JSON.stringify(payload));
+    return;
+  }
+
+  res.statusCode = status;
+  res.end(JSON.stringify(payload));
 };
 
 const readJsonResponse = async (response) => {
@@ -92,6 +99,59 @@ const readJsonResponse = async (response) => {
   }
 };
 
+const readAssistantReply = (data) => {
+  const content = data.choices?.[0]?.message?.content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return part?.text || '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return typeof content === 'string' ? content.trim() : '';
+};
+
+const createChatPayload = (messages) => ({
+  model: OPENROUTER_MODEL,
+  messages,
+  temperature: 0.2,
+  top_p: 0.7,
+  max_tokens: 1024,
+  stream: false
+});
+
+const callOpenRouter = async ({ apiKey, messages }) => {
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://naveos-3341c.web.app',
+      'X-Title': 'Nave OS'
+    },
+    body: JSON.stringify(createChatPayload(messages))
+  });
+
+  const data = await readJsonResponse(response);
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error?.message || `OpenRouter request failed with status ${response.status}.`);
+  }
+
+  const reply = readAssistantReply(data);
+
+  if (!reply) {
+    throw new Error('OpenRouter returned an empty response.');
+  }
+
+  return reply;
+};
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -99,49 +159,25 @@ export default async function handler(req, res) {
       return;
     }
 
-    const apiKey = process.env.NVIDIA_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
-      sendJson(res, 500, { error: 'NVIDIA API key is not configured.' });
+      sendJson(res, 500, { error: 'OpenRouter API key is not configured.' });
       return;
     }
 
     const body = await readBody(req);
-    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: NVIDIA_MODEL,
-        messages: buildMessages(body.messages, body.memories),
-        temperature: 0.2,
-        top_p: 0.7,
-        max_tokens: 1024,
-        stream: false
-      })
-    });
-
-    const data = await readJsonResponse(response);
-
-    if (!response.ok || data.error) {
-      const message = data.error?.message || `NVIDIA API request failed with status ${response.status}.`;
-      sendJson(res, response.ok ? 502 : response.status, { error: message });
-      return;
-    }
-
-    const text = data.choices?.[0]?.message?.content;
-
-    if (!text) {
-      sendJson(res, 502, { error: 'NVIDIA returned an empty response.' });
-      return;
-    }
-
-    sendJson(res, 200, { reply: text });
+    const messages = buildMessages(body.messages, body.memories);
+    const reply = await callOpenRouter({ apiKey, messages });
+    sendJson(res, 200, { reply });
   } catch (error) {
-    console.error('Vercel NVIDIA proxy failure:', error);
-    sendJson(res, 500, { error: error.message || 'NVIDIA fallback failed.' });
+    console.error('Vercel chat proxy failure:', error);
+    const status =
+      error.message === 'messages must be an array.' ||
+      error.message === 'At least one user message is required.'
+        ? 400
+        : 500;
+
+    sendJson(res, status, { error: error.message || 'Nave OS chat failed.' });
   }
 }
