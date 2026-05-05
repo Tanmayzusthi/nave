@@ -21,23 +21,28 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       {
-        name: 'local-api-chat',
+        name: 'local-api',
         configureServer(server) {
-          server.middlewares.use('/api/chat', async (req, res, next) => {
-            if (req.method !== 'POST') {
-              next()
-              return
-            }
-
+          server.middlewares.use('/api', async (req, res, next) => {
+            if (req.method !== 'POST') return next();
             try {
-              const { default: handler } = await import('./api/chat.js')
-              await handler(req, res)
+              const route = req.url.split('?')[0].slice(1);
+              let handler;
+              if (route === 'chat') {
+                handler = (await import('./api/chat.js')).default;
+              } else if (route === 'tts') {
+                handler = (await import('./api/tts.js')).default;
+              } else {
+                return next();
+              }
+              await handler(req, res);
             } catch (error) {
-              res.statusCode = 500
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ error: error.message || 'Nave OS chat failed.' }))
+              console.error(error);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: error.message }));
             }
-          })
+          });
         },
       },
     ],

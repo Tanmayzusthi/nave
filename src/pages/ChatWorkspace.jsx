@@ -10,7 +10,15 @@ import {
   Trash2,
   Sparkles,
   PanelLeftOpen,
-  X
+  X,
+  Brain,
+  ToggleLeft,
+  ToggleRight,
+  FileText,
+  Image as ImageIcon,
+  XCircle,
+  UploadCloud,
+  Mic
 } from 'lucide-react';
 import {
   addDoc,
@@ -26,7 +34,9 @@ import {
 import { Button } from '../components/ui/Button';
 import { cn } from '../lib/utils';
 import { db } from '../lib/firebase';
+import { parseFileText, compressImageToBase64 } from '../lib/fileParser';
 import { useAuth } from '../context/AuthContext';
+import { VoiceMode } from '../components/ui/VoiceMode';
 
 const getRelevantMemories = (memories, prompt) => {
   const words = new Set(
@@ -102,7 +112,7 @@ const getChatResponse = async (messages, memories = []) => {
 };
 
 const ChatWorkspace = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [messages, setMessages] = useState([STARTER_MESSAGE]);
   const [chats, setChats] = useState([]);
   const [selectedChatId, setSelectedChatId] = useState(null);
@@ -110,8 +120,13 @@ const ChatWorkspace = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [permanentMemories, setPermanentMemories] = useState([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAutoMemoryOn, setIsAutoMemoryOn] = useState(true);
+  const [attachments, setAttachments] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const scrollRef = useRef(null);
   const selectedChatIdRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     selectedChatIdRef.current = selectedChatId;
@@ -125,7 +140,7 @@ const ChatWorkspace = () => {
     const memoriesQuery = query(
       collection(db, 'memories'),
       where('userId', '==', user.uid),
-      where('type', '==', 'permanent')
+      where('type', 'in', ['permanent', 'auto'])
     );
 
     const unsubscribe = onSnapshot(
@@ -210,6 +225,7 @@ const ChatWorkspace = () => {
 
   const createNewChat = () => {
     setInput('');
+    setAttachments([]);
     setMessages([STARTER_MESSAGE]);
     setSelectedChatId(null);
   };
@@ -218,6 +234,7 @@ const ChatWorkspace = () => {
     setSelectedChatId(chat.id);
     setMessages(chat.messages?.length ? chat.messages : [STARTER_MESSAGE]);
     setInput('');
+    setAttachments([]);
   };
 
   const deleteChat = async (chatId) => {
@@ -244,19 +261,121 @@ const ChatWorkspace = () => {
     });
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
+  const handleFiles = async (files) => {
+    const validFiles = Array.from(files).filter(f => f.size <= 5 * 1024 * 1024);
+    if (validFiles.length < files.length) alert('Some files were skipped (Max 5MB limit).');
+    
+    for (const file of validFiles) {
+      const isImage = file.type.startsWith('image/');
+      let textContent = null;
+      let url = null;
+      
+      if (!isImage) {
+        textContent = await parseFileText(file);
+      } else {
+        url = await compressImageToBase64(file);
+      }
+      
+      const newAttachment = {
+        id: Math.random().toString(36).substring(7),
+        file,
+        name: file.name,
+        type: isImage ? 'image' : 'document',
+        previewUrl: isImage ? url : null,
+        textContent,
+        progress: 100, // Instant upload
+        url
+      };
+      
+      setAttachments(prev => [...prev, newAttachment]);
+    }
+  };
 
-    const userMessage = { role: 'user', content: input };
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+        handleFiles(e.clipboardData.files);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [user]);
+
+  const removeAttachment = (id) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const processIncomingReply = async (replyText) => {
+    let finalReply = replyText;
+    const memoryMatches = [...finalReply.matchAll(/<SAVE_MEMORY title="([^"]+)">([\s\S]*?)<\/SAVE_MEMORY>/g)];
+    
+    if (memoryMatches.length > 0 && isAutoMemoryOn && user) {
+      for (const match of memoryMatches) {
+         const title = match[1];
+         const content = match[2];
+         
+         const isDuplicate = permanentMemories.some(m => m.title === title || m.content === content);
+         if (!isDuplicate) {
+           await addDoc(collection(db, 'memories'), {
+             userId: user.uid,
+             type: 'auto',
+             title,
+             content,
+             createdAt: serverTimestamp()
+           });
+         }
+      }
+      finalReply = finalReply.replace(/<SAVE_MEMORY[\s\S]*?<\/SAVE_MEMORY>/g, '').trim();
+    }
+    
+    if (!finalReply) finalReply = "Memory successfully saved.";
+    return finalReply;
+  };
+
+  const handleSend = async () => {
+    if (loading) return;
+    if (!user) {
+      alert("Please login first to send messages.");
+      return;
+    }
+    if ((!input.trim() && attachments.length === 0) || isTyping) return;
+
+    if (attachments.some(a => a.progress < 100)) {
+       alert("Please wait for uploads to finish");
+       return;
+    }
+
+    let finalInput = input;
+    const currentAttachments = [...attachments];
+    
+    currentAttachments.forEach(att => {
+       if (att.type === 'document' && att.textContent) {
+          finalInput += `\n\n--- Attachment: ${att.name} ---\n${att.textContent}\n---`;
+       } else if (att.type === 'image') {
+          finalInput += `\n\n[Image Attached: ${att.name}]`; // Multimodal placeholder
+       }
+    });
+
+    const userMessage = { 
+      role: 'user', 
+      content: finalInput,
+      displayContent: input || 'Sent an attachment',
+      attachments: currentAttachments.map(a => ({ name: a.name, url: a.url, type: a.type }))
+    };
+
     const updatedMessages = [...messages, userMessage];
 
     setMessages(updatedMessages);
     setInput('');
+    setAttachments([]);
     setIsTyping(true);
 
     try {
       const relevantMemories = getRelevantMemories(permanentMemories, userMessage.content);
-      const response = await getChatResponse(updatedMessages, relevantMemories);
+      let response = await getChatResponse(updatedMessages, relevantMemories);
+      
+      response = await processIncomingReply(response);
+
       const assistantMessage = { 
         role: 'assistant', 
         content: response 
@@ -294,8 +413,40 @@ const ChatWorkspace = () => {
     }
   };
 
+  const handleVoiceComplete = async (userText, aiReply) => {
+    const userMsg = { role: 'user', content: userText };
+    const processedReply = await processIncomingReply(aiReply);
+    const aiMsg = { role: 'assistant', content: processedReply };
+    const finalMessages = [...messages, userMsg, aiMsg];
+    setMessages(finalMessages);
+
+    if (user) {
+      if (selectedChatId) {
+        await persistMessages(selectedChatId, finalMessages);
+      } else {
+        const newChat = await addDoc(collection(db, 'chatSessions'), {
+          userId: user.uid,
+          title: getChatTitle(finalMessages),
+          messages: finalMessages,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        setSelectedChatId(newChat.id);
+      }
+    }
+  };
+
   return (
     <div className="flex h-full w-full min-w-0 overflow-hidden relative">
+      {isVoiceModeOpen && (
+        <VoiceMode 
+          messages={messages} 
+          memories={getRelevantMemories(permanentMemories, '')}
+          onClose={() => setIsVoiceModeOpen(false)}
+          onComplete={handleVoiceComplete}
+        />
+      )}
+      
       {isHistoryOpen && (
         <button
           type="button"
@@ -393,14 +544,27 @@ const ChatWorkspace = () => {
             Nave Intelligence (2.5 Lite) <ChevronDown className="w-4 h-4" />
           </Button>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="h-11 gap-2"
-          onClick={createNewChat}
-        >
-          <Plus className="w-4 h-4" /> New Chat
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("h-11 gap-2", isAutoMemoryOn ? "text-white" : "text-neutral-500")}
+            onClick={() => setIsAutoMemoryOn(!isAutoMemoryOn)}
+            title="Toggle Auto Memory"
+          >
+            <Brain className="w-4 h-4" />
+            <span className="hidden sm:inline">Auto Memory</span>
+            {isAutoMemoryOn ? <ToggleRight className="w-5 h-5 text-green-400" /> : <ToggleLeft className="w-5 h-5" />}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-11 gap-2"
+            onClick={createNewChat}
+          >
+            <Plus className="w-4 h-4" /> New Chat
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -431,7 +595,22 @@ const ChatWorkspace = () => {
                   ? 'bg-white text-black' 
                   : 'border border-white/5 bg-neutral-900/50 text-neutral-200'
               )}>
-                {msg.content}
+                {msg.displayContent || msg.content}
+                
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {msg.attachments.map((att, i) => (
+                      <a key={i} href={att.url} target="_blank" rel="noreferrer" className={cn("flex items-center gap-2 rounded-lg p-2 text-xs", msg.role === 'user' ? 'bg-black/5 hover:bg-black/10 text-black' : 'bg-white/5 hover:bg-white/10 text-white')}>
+                        {att.type === 'image' ? (
+                           <img src={att.url} alt={att.name} className="w-10 h-10 object-cover rounded" />
+                        ) : (
+                           <FileText className="w-4 h-4" />
+                        )}
+                        <span className="truncate max-w-[120px] font-medium">{att.name}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {msg.role === 'user' && (
@@ -459,7 +638,47 @@ const ChatWorkspace = () => {
 
       {/* Input Area */}
       <div className="shrink-0 pb-4 pt-4 sm:pb-8">
-        <div className="glass relative rounded-2xl border-white/10 p-2 shadow-2xl">
+        <div 
+          className={cn(
+            "glass relative rounded-2xl border-white/10 p-2 shadow-2xl transition-all",
+            isDragging ? "bg-white/10 border-white/30 ring-2 ring-white/20" : ""
+          )}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-neutral-950/80 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2 text-white">
+                <UploadCloud className="w-8 h-8 animate-bounce" />
+                <span className="font-semibold">Drop files to upload</span>
+              </div>
+            </div>
+          )}
+          
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-2 pb-1">
+              {attachments.map(att => (
+                <div key={att.id} className="relative flex items-center gap-2 rounded-lg bg-white/5 p-2 pr-8 border border-white/10 text-sm text-white">
+                  {att.type === 'image' && att.previewUrl ? (
+                    <img src={att.previewUrl} alt={att.name} className="w-8 h-8 object-cover rounded" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-neutral-400" />
+                  )}
+                  <div className="flex flex-col min-w-[100px]">
+                    <span className="truncate max-w-[150px] text-xs font-medium">{att.name}</span>
+                    <div className="h-1 w-full bg-white/10 rounded-full mt-1 overflow-hidden">
+                      <div className="h-full bg-white transition-all duration-300" style={{ width: `${att.progress}%` }} />
+                    </div>
+                  </div>
+                  <button onClick={() => removeAttachment(att.id)} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white">
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -469,17 +688,26 @@ const ChatWorkspace = () => {
           />
           <div className="flex flex-wrap items-center justify-between gap-3 p-2">
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0">
+              <input 
+                type="file" 
+                multiple 
+                ref={fileInputRef} 
+                className="hidden" 
+                onChange={(e) => handleFiles(e.target.files)} 
+                accept="image/*,.pdf,.txt,.csv,.docx"
+              />
+              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0" onClick={() => fileInputRef.current?.click()}>
                 <Paperclip className="w-4 h-4 text-neutral-500" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0">
-                <Sparkles className="w-4 h-4 text-neutral-500" />
+              <Button variant="ghost" size="sm" className="h-11 w-11 rounded-lg p-0" onClick={() => setIsVoiceModeOpen(true)}>
+                <Mic className="w-4 h-4 text-neutral-500 hover:text-blue-400 transition-colors" />
               </Button>
             </div>
             <Button 
               size="sm" 
-              className={cn('h-11 gap-2 px-4 transition-all', input.trim() ? 'bg-white text-black' : 'bg-white/10 text-white/40')}
+              className={cn('h-11 gap-2 px-4 transition-all', input.trim() || attachments.length > 0 ? 'bg-white text-black' : 'bg-white/10 text-white/40')}
               onClick={handleSend}
+              disabled={loading}
             >
               <Send className="w-4 h-4" /> Send
             </Button>

@@ -75,7 +75,7 @@ const MemoryPage = () => {
   );
 
   const temporaryMemories = useMemo(
-    () => memories.filter((memory) => memory.type === 'temporary'),
+    () => memories.filter((memory) => memory.type === 'temporary' || memory.type === 'auto'),
     [memories]
   );
 
@@ -179,7 +179,7 @@ const MemoryPage = () => {
           >
             <div className="min-w-0 flex-1 sm:flex sm:items-start sm:gap-4">
               <span className="mb-2 block w-fit rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-neutral-500 sm:mb-0 sm:w-24 sm:bg-transparent sm:px-0">
-                {variant === 'permanent' ? 'Core' : 'Temporary'}
+                {variant === 'permanent' ? 'Core' : 'Auto'}
               </span>
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-neutral-100">
@@ -302,7 +302,7 @@ const MemoryPage = () => {
                 className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none focus:border-white/20"
               >
                 <option className="bg-neutral-950" value="permanent">Permanent</option>
-                <option className="bg-neutral-950" value="temporary">Temporary</option>
+                <option className="bg-neutral-950" value="auto">Auto</option>
               </select>
             </div>
 
@@ -371,7 +371,7 @@ const MemoryPage = () => {
 
         <section>
           <div className="mb-6 flex items-center gap-2">
-            <h2 className="text-xl font-bold">Temporary Memory</h2>
+            <h2 className="text-xl font-bold">Auto Memory</h2>
             <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-neutral-400">AUTO</span>
           </div>
           {renderMemoryList(temporaryMemories, 'temporary')}

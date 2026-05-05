@@ -8,6 +8,13 @@ You are Nave OS, a premium, ultra-modern AI Operating System.
 Your aesthetic is minimal, elegant, and intelligent.
 When asked who you are, always identify as Nave OS.
 Maintain a professional yet approachable persona.
+
+You have an autonomous memory system. If the user tells you a personal fact, preference, rule, or long-term context that you should remember for future conversations, you MUST save it.
+To save a memory, you must output a block formatted EXACTLY like this anywhere in your response:
+<SAVE_MEMORY title="Short Title">The exact detailed memory to save.</SAVE_MEMORY>
+
+You can save multiple memories by outputting multiple blocks. 
+IMPORTANT: Only output the <SAVE_MEMORY> block when the user shares something new worth remembering.
 `;
 
 const buildMemoryContext = (memories = []) => {
@@ -130,7 +137,7 @@ const callOpenRouter = async ({ apiKey, messages }) => {
     headers: {
       accept: 'application/json',
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey.trim()}`,
       'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://naveos-3341c.web.app',
       'X-Title': 'Nave OS'
     },
@@ -141,13 +148,17 @@ const callOpenRouter = async ({ apiKey, messages }) => {
 
   if (!response.ok || data.error) {
     console.error('OpenRouter Error Response:', JSON.stringify(data, null, 2));
+    if (data.error?.message === 'User not found.') {
+      throw new Error(`OpenRouter rejected your API key. We sent: "${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}" (Length: ${apiKey.length}). This key is strictly invalid or deleted on OpenRouter.ai. You must create a new one.`);
+    }
     throw new Error(data.error?.message || `OpenRouter request failed with status ${response.status}.`);
   }
 
   const reply = readAssistantReply(data);
 
   if (!reply) {
-    throw new Error('OpenRouter returned an empty response.');
+    console.error('Full OpenRouter Response:', JSON.stringify(data, null, 2));
+    throw new Error('OpenRouter returned an empty response. Check console logs.');
   }
 
   return reply;
@@ -160,10 +171,21 @@ export default async function handler(req, res) {
       return;
     }
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const rawKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = rawKey ? rawKey.trim() : '';
 
     if (!apiKey) {
-      sendJson(res, 500, { error: 'OpenRouter API key is not configured.' });
+      sendJson(res, 500, { error: 'OpenRouter API key is entirely missing or empty.' });
+      return;
+    }
+
+    if (apiKey.includes('your_openrouter_key_here')) {
+      sendJson(res, 500, { error: 'You are still using the placeholder API key from .env.example. Please paste the real key.' });
+      return;
+    }
+
+    if (!apiKey.startsWith('sk-or-')) {
+      sendJson(res, 500, { error: `Invalid key format! Your key starts with "${apiKey.substring(0, 4)}". OpenRouter keys MUST start with "sk-or-". Did you accidentally paste a Gemini or NVIDIA key?` });
       return;
     }
 
